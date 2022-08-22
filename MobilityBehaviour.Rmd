@@ -1,0 +1,1156 @@
+---
+title: "Mobility Behaviour Analysis of Grenoble Citizens - Big Data Analysis "
+date: "`r Sys.Date()`"
+author: "Arman Hosseini, Burcu Bılgın, Erol Furkan Segmenoglu"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+fontsize: 10pt
+bibliography: references.bib
+---
+
+\newpage
+
+# Introduction
+
+The main objectives of this project are (1) propose a characterization of mobile and immobile population, where mobility will be defined by the number of trips that a person has made, and (2) identify the specifications of mobility and predict the mobility of citizens based on the specifications. Unsupervised and Supervised learning methods are applied for Characterization and Prediction Respectively.
+
+The specific focus of the paper will be on the effect of car ownership on immobile population. In order to achieve this objective the data describe the trips made by members of Grenoble households (Cerema (2013) is used.
+
+
+# Data Set Preparation 
+
+## Data Set Description
+
+According to the results of an urban mobility survey answered by people living in the city of Grenoble, 3 different data frames containing some common variables were created. While creating the data set for our research, only these 2 data frames were taken into account, as we are interested in the Household and Person variables among these 3 data frames that can be associated with Household, Person and Trip characteristics.
+
+```{r, include = FALSE}
+rm(list=ls())
+load("allgreI.RData")
+load("allgreM.RData")
+```
+
+
+```{r}
+dim(allgreM)
+```
+
+The data frame which consists variables about household such as type of residence is allgreM and it has 3236 rows and 50 columns. Since its primary key is id_men which is Household id it can be said that, the data consist 3236 different houses and 50 numerical, discrete etc. variables which are about the household.
+
+Note: Primary key is the unique variable that each element in the data frame has.
+
+```{r}
+dim(allgreI)
+```
+
+Similarly, the data frame which consists variables about person such as age is allgreI and it has 7720 rows and 39 columns. Since its primary key is id_per which is Person id it can be said that, the data consist 7720 different people and 39 variables which are about the personal characteristics.
+
+### Create Data Set
+
+From this point on, variables chosen from quite a lot of attributes will be considered. Variables selected from 2 different data frames according to our literature search ([@nolan2010dynamic], [@kitamura2009dynamic], [@bwambale2019car], [@jong2004comparison], [@mulalic2020does], [@johansson2002estimating], [@paulley2006demand]) and general knowledge are combined with the id_men variable with the inner join function of merge and a new data set "dataset" is created.
+
+```{r, include = FALSE}
+dataset <- merge(x = allgreI[ , c("id_pers", "id_men", "age", "sexe", "permis", "ABO_TC", "STAT_TRAV", "nbd")], y = allgreM[ , c("id_men", "VP_DISPO", "NB_velo", "NB_2Rm", "nb_pers")], by = "id_men", all=TRUE)
+```
+
+With our choices, there are 12 variables in our data set: id_men, age, sexe, permis, ABO_TC, STAT_TRAV, nbd, VP_DISPO, NB_velo, NB_2Rm, nb_pers. The properties, structures, creation and factorization of these variables are explained below.
+
+#### Household ID:
+
+- id_men, Primary key of allgreM (numerical)
+
+#### Person ID: 
+
+- id_pers, Primary key of allgreI (numerical)
+
+#### Household Characteristics
+
+- Number of people in the household: This variable is one of the imposed variables to predict immobility. It has integer value. We used nb_pers for this attribute.
+
+- Number of available cars in the household: This variable is also one of the imposed variables to predict immobility. It has integer value. We used VP_DISPO for this attribute. This is Z variable in our research.
+
+#### People Characteristics
+
+- Age: It has integer value. We used age for this attribute. This is X variable in our research.
+
+- Sexe: Its value is binary (1 or 2). We used sexe for this attribute.  
+
+- Driving Licence: Its value is binary (1 or 2) according to have an driving licence or not. We used permis for this attribute.
+
+- Number of Trips: This variable represent the number of trips that each person makes so it has integer value. By using this value we create immobility variable. It is represented by nbd
+
+#### Alternative Transportation Modes
+
+- Subscription of Transport Card: It has values of 1,2,3 according to posses an subscription for free, subscription with price and no subscription. It is represented by ABO_TC  
+
+- Number of Bikes in the household: It represents total number of bikes in a house so it has integer value. We use it to just create a new variable "alter_veh". It is represented by NB_velo
+
+- Number of 2 Motorized Wheels: It represents total number of 2 motorized wheels in a house so it has integer value. We use it to just create a new variable "alter_veh". It is represented by NB_2Rm
+
+#### Parking Problems
+
+- For parking problems, there is a variable which is represented by STAT_TRAV. It has values of 1,2,3 which represent "Yes I've parking difficulties", "Non, I don't thanks to reserved place" and "Non, I don't thanks to parking offer nearby"
+
+## Missing Values
+
+```{r, include = FALSE}
+sum(is.na(dataset))
+```
+
+Currently we have 7707 missing values. As this number is so big, it doesn't sound logic to delete all missing values without any data analysis. Hence, it is better to check number of missing values in columns and rows.
+
+```{r, echo = FALSE}
+colSums(is.na(dataset))
+```
+
+It can be seen that there are so many NA values which mean "No information" in STAT_TRAV (the proportion is 6805/7720)  so we don't consider it as a significant variable.Therefore, we delete it.
+
+```{r, include = FALSE}
+dataset$STAT_TRAV <- NULL
+```
+
+There are still missing values in columns permis "Possession of driving license" and ABO_TC "Possession of a Public Transport subscription in general". After data analysis, it is observed that for all the individuals under 5 years old the value for both columns are NA. This information comes from filtering the dataset based on the “age”.  We are not sure about the values of these of the column ABO_TC for the age below 5. Analysis of this column for the age 5 and close to 5, show that this value varies between values 1,2 and 3. So it is better not to fill the missing values of these columns for the ages below 5 randomly. Hence, the ages below 5 are eliminated. 
+
+```{r, include = FALSE}
+dataset$permis[is.na(dataset$permis)] <- 2
+dataset$ABO_TC[is.na(dataset$ABO_TC)] <- 3
+```
+
+```{r, echo = FALSE}
+colSums(is.na(dataset))
+```
+
+Now it is visible that all the missing values have been eliminated.
+
+## Changing Values of Attributes
+
+In order to manipulate data according to our hypothesis we transmitted the permis type 3 in 2 becasue all we concern is the fact whether the person has a permis to be able to choose the option of transformation by car or not and since the people with permis type 3 don't have a choice to drive on their own, for us they are equal to the people with no permis.
+
+We have similar situation for ABO_TC too. We concern only possession of ABO_TC and its gratuity (free or paid) is not important for us. ABO_TC=1 and ABO_TC=2 mean having a subscription so they are same thing in our point of view. 
+
+```{r, include = FALSE}
+dataset$permis[dataset$permis==3] <- 2
+dataset$ABO_TC[dataset$ABO_TC==2] <- 1
+dataset$ABO_TC[dataset$ABO_TC==3] <- 2
+```
+
+## Removing Repeating Rows 
+
+To deal with the redundant values we wanted to check and eliminate repeating rows.
+
+```{r, include = FALSE}
+library(dplyr)
+distinct(dataset)
+```
+
+## Creating Variables
+
+### Creating UN
+
+As our variable of interest is UN which is a binary variable showing whether the person is immobile or mobile and isn't in our database we created this variable by using nbr "number of trips" if nbr>0 Un=1 if not Un=0
+
+```{r, include = FALSE}
+dataset$UN <- as.numeric(dataset$nbd !=0)
+```
+
+
+### Creating num_per_perm
+
+We created a variable num_per_perm to create car_ratio variable. num_per_perm means the number of people with driving licence in the household. We will divide VP_DISPO "number of cars in the household" by this variable in order to acquire car_ratio.
+
+```{r, include = FALSE}
+temp_dataset<- dataset%>% count(id_men, permis)
+temp_dataset<- temp_dataset[temp_dataset$permis<2,]
+temp_dataset$permis <- NULL
+dataset <- merge(dataset,temp_dataset, all=TRUE)
+dataset$num_per_perm <- dataset$n
+dataset$n <- NULL
+```
+
+### Creating car_ratio
+
+Based on our strategy for our problematic the car ownership is defined by the fact whether a person in the household has a car available for his usage. In order to put this meaning in a mathematical sense we used car_ratio variable.
+
+```{r, include = FALSE}
+dataset$car_ratio <- as.numeric(dataset$VP_DISPO/dataset$num_per_perm)
+```
+
+### Creating bike_ratio
+
+In the same sense, we wanted to figure out the ratio of bikes available for each person in the household. In this case, we don't need driving licence to ride a bike.
+
+```{r, include = FALSE}
+dataset$bike_ratio <- as.numeric(dataset$NB_velo/dataset$nb_pers)
+```
+
+### Missing Values of The New Variables
+
+We had some NA values in num_perm_per instead of 0. We wanted to keep it that way in order not to have problems with the division. VP_DISPO/num_perm_per gave us NA and we changed them to 0 becasue it that NA showed us that there are no driver's in the household.
+
+```{r, include = FALSE}
+colSums(is.na(dataset))
+```
+
+
+```{r, include = FALSE}
+dataset$num_per_perm[is.na(dataset$num_per_perm)] <- 0
+dataset$bike_ratio[is.na(dataset$bike_ratio)] <- 0
+dataset$car_ratio[is.na(dataset$car_ratio)] <- 0
+```
+
+## Outliers
+
+Within the next steps outliers in the dataset have been detected and treated in our dataset. And the boxplot visualisation of the outliers can be found in the "Annex" section.
+
+```{r,include = FALSE}
+#install.packages("psych")
+library(psych)
+describe(dataset)
+```
+
+By looking at the description table of our dataset, we noticed that the only unexpected values (such as wide range and signes) were in the NB_2Rm attribute as it had large maximum which is unexpected. 
+
+### NB_2Rm 
+
+```{r, fig.height=2.5, include = FALSE}
+boxplot(dataset$NB_2Rm, horizontal = T)
+```
+
+
+```{r, include= FALSE}
+CleanDataset <- filter(dataset, NB_2Rm<5)
+hist(CleanDataset$NB_2Rm, breaks = 5) 
+```
+
+After having filtered the outliers we saw that we have more than 5000 0 values. Therefore, we can see that there is no significant difference among the population so we can remove it.
+
+```{r, include = FALSE }
+dataset$NB_2Rm <- NULL
+```
+
+### NB_Velo
+
+We detetcted the outliers of number of bikes per household  by boxplotting. We saw that 10 bikes in a household  is an outlier so we filtered our dataset by NB_Velo below 10 people
+
+```{r, fig.height=2.5, include = FALSE}
+boxplot(dataset$NB_velo, horizontal = T)
+```
+
+```{r, include=FALSE}
+boxplot.stats(dataset$NB_velo)$out
+dataset <- filter(dataset, NB_velo<10)
+```
+
+```{r, include=FALSE}
+boxplot(dataset$NB_velo, horizontal = T)
+```
+
+```{r, include=FALSE}
+boxplot.stats(dataset$NB_velo)$out
+summary(dataset$NB_velo)
+```
+
+### nb_pers 
+
+We detetcted the outliers of household size by boxplotting. We saw that 8 people is an outlier so we filtered our dataset by nbr_pers below 7 people
+
+```{r, fig.height=2.5, include = FALSE}
+boxplot(dataset$nb_pers, horizontal = T)
+```
+```{r, include=FALSE}
+boxplot.stats(dataset$nb_pers)$out
+summary(dataset$nb_pers)
+```
+
+```{r, include=FALSE}
+dataset <- filter(dataset, nb_pers<8)
+boxplot(dataset$nb_pers, horizontal = T)
+```
+
+### nbd
+
+We detected the outliers of household size by boxplotting. We saw that 10 numbers of trips is an outlier so we filtered our dataset by nbd below 10 number of trips
+
+```{r, fig.height=2.5, include = FALSE}
+boxplot(dataset$nbd,horizontal = T)
+```
+```{r, include = FALSE}
+boxplot.stats(dataset$nbd)$out
+```
+
+```{r, include = FALSE}
+dataset <- filter(dataset, nbd<10)
+boxplot.stats(dataset$nbd)$out
+```
+
+Same strategy is applied for the "Number of available cars in households" ,  "Number of driving licence holders per household", "Car ratio" and "Bike ratio"
+
+### VP_DISPO
+
+```{r, fig.height=2.5, include = FALSE}
+boxplot(dataset$VP_DISPO, horizontal = T)
+```
+
+```{r, include = FALSE}
+boxplot.stats(dataset$VP_DISPO)$out
+```
+
+The outliers for the variable VP_DISPO is starting from 4, so we will filter...
+
+```{r, include = FALSE}
+dataset <- filter(dataset, VP_DISPO<4)
+boxplot.stats(dataset$VP_DISPO)$out
+```
+
+### Number of driving licence holders per household
+
+```{r, fig.height=2.5, include = FALSE}
+boxplot(dataset$num_per_perm, horizontal = T)
+```
+```{r, include = FALSE}
+boxplot.stats(dataset$num_per_perm)$out
+```
+
+```{r, include = FALSE}
+dataset <- filter(dataset, num_per_perm<4)
+boxplot.stats(dataset$num_per_perm)$out
+```
+
+### Car Ratio
+
+```{r, fig.height=2.5, include = FALSE}
+boxplot(dataset$car_ratio, horizontal = T)
+```
+```{r, include = FALSE}
+boxplot.stats(dataset$car_ratio)$out
+```
+
+```{r, include = FALSE}
+dataset <- filter(dataset, car_ratio<2)
+boxplot.stats(dataset$car_ratio)$out
+```
+
+### Bike Ratio
+
+```{r, fig.height=2.5, include=FALSE}
+boxplot(dataset$bike_ratio, horizontal = T)
+```
+```{r, include=FALSE}
+boxplot.stats(dataset$bike_ratio)$out
+```
+
+```{r, include=FALSE}
+dataset <- filter(dataset, bike_ratio<2.66)
+boxplot.stats(dataset$bike_ratio)$out
+```
+
+All the outliers in ourdataset have been cleaned.
+
+# Summary Statistics
+
+## Univariate and Bivariate Study of Variables
+
+```{r, include=FALSE}
+library(lessR)
+```
+
+```{r, include=FALSE}
+dataset_stat<- dataset
+dataset_stat$sexe[dataset_stat$sexe==1] <- "Sex:M"
+dataset_stat$sexe[dataset_stat$sexe==2] <- "Sex:W"
+dataset_stat$permis[dataset_stat$permis==1] <- "Permis:Yes"
+dataset_stat$permis[dataset_stat$permis==2] <- "Permis:No"
+dataset_stat$ABO_TC[dataset_stat$ABO_TC==1] <- "ABO_TC:Yes"
+dataset_stat$ABO_TC[dataset_stat$ABO_TC==2] <- "ABO_TC:No"
+dataset_stat$UN[dataset_stat$UN==0] <- "Immobile"
+dataset_stat$UN[dataset_stat$UN==1] <- "Mobile"
+is.factor(dataset$sexe)
+```
+
+### Age as variable X
+
+```{r}
+class(dataset_stat$age)   #values in age attribute ar all integers
+sum(is.na(dataset_stat$age)) #There are no null values
+summary(dataset_stat$age) 
+var(dataset_stat$age)
+```
+
+```{r, fig.height=2.5, echo=FALSE}
+boxplot(dataset_stat$age, horizontal = T)
+```
+
+Most of the poeple are cumulated between the ages 20 and 60.
+
+```{r, fig.height=3.5, echo=FALSE}
+hist(dataset_stat$age[dataset_stat$UN=="Mobile"], col = "pink", main = "Mobility by age",
+     xlab = "Age")
+hist(dataset_stat$age[dataset_stat$UN=="Immobile"], col = "lightblue", add=T)
+legend("right", c("Mobile", "Immobile"), col=c("pink", "lightblue"), lwd=10)
+```
+
+Age distribution of mobile and immobile people shows us that most of the immobile people have age between 60 and 80 whereas most of the mobile people have age around 40
+
+### UN as variable Y
+
+```{r, warning = FALSE, include=FALSE}
+class(dataset_stat$UN)   
+summary(dataset_stat$UN)
+var(dataset_stat$UN)
+BarChart(UN, data = dataset_stat, 
+         xlab="Mobility (UN)",
+     ylab="Frequency")
+```
+
+```{r, fig.height=2.5, echo=FALSE, results='hide',fig.keep='all'}
+BarChart(UN, data = dataset_stat, 
+         xlab="Mobility (UN)",
+     ylab="Frequency")
+```
+
+What we see by the help of the Bar Chart is that %89 of our population is mobile where %11 is immobile, so we can say that the gap is large and that might affect our prediction results.
+
+### VP_DISPO as variable Z
+
+```{r, include=FALSE}
+class(dataset_stat$VP_DISPO)   #values in age attribute ar all integers
+summary(dataset_stat$VP_DISPO) 
+var(dataset_stat$VP_DISPO)
+range(dataset_stat$VP_DISPO)
+```
+
+```{r, fig.height=2.5, echo=FALSE, results='hide',fig.keep='all'}
+BarChart(VP_DISPO, data = dataset_stat,
+          xlab="number of available cars in the household",
+     ylab="Frequency")
+```
+
+The distribution of available cars in the household can be seen in the bar chart. %47 of our population has 2 available cars in the household adn the second largest volume is 1 available car in the house hold by the pourcentage of %36
+
+### Car Ratio
+
+```{r, fig.height=3.5, echo=FALSE}
+hist(dataset_stat$car_ratio[dataset_stat$UN=="Mobile"], 
+     col = "pink",
+     main = "Mobility by Car_ratio",
+     xlab = "car_ratio",
+     breaks = 5)
+hist(dataset_stat$car_ratio[dataset_stat$UN=="Immobile"], 
+     col = "lightblue",
+     add=T,
+     breaks = 5)
+legend("right", c("Mobile", "Immobile"), col=c("pink", "lightblue"), lwd=10)
+```
+
+With this graph we can see that the majority of car ratio lies in between 0 and 1 which shows us that the number of cars available in the household is less than the number of people with driver's license in the household. Also, both mobile and immobile people the car ratio mostly lies in between 0 and 1
+
+### Bike Ratio
+
+```{r, fig.height=3.5, echo=FALSE}
+hist(dataset_stat$bike_ratio, main = "Bike Ratio Distribution", breaks = 10)
+```
+
+Same as car ratio, the majority lies in between 0 and 1.
+
+```{r, include=FALSE, results='hide',fig.keep='all'}
+library(ggplot2)
+ggplot(dataset_stat, aes(x=bike_ratio, y = car_ratio)) + geom_count()
+ggplot(dataset_stat, aes(x=car_ratio, y = UN)) + geom_count()
+
+#This diagram shows us that the majority of people has equal ratios of bike and car which means when the number of available car in the household equal to the number of people with driver's license there is a big chance that each people in the household also have bikes available for them. The second majority is for the people who does not own a bike but their car ratio is equal to 1.
+
+```
+
+
+### Permis & ABO_TC
+
+```{r, fig.height=2.5, echo=FALSE, results='hide',fig.keep='all'}
+BarChart(permis, data = dataset_stat, main = "Driver's License Distrubution")
+```
+The people with the driver's license in our population is %69, people without driver's license is %31.
+
+```{r, echo=FALSE}
+xtabs(~ UN + permis, data=dataset_stat)
+xtabs(~ UN + ABO_TC, data=dataset_stat)
+```
+
+
+The tables show us the distribution of mobile and immobile people based on their driver's license possesion and the second one is based on their trabsportation subscriptions
+
+## Redundant Variables With Correlation Matrix
+
+We used Correlation Matrix and findCorrelation function to identify which variables are highly correlated with the others and remove them.
+
+```{r, include=FALSE}
+set.seed(7)
+#install.packages("mlbench")
+#install.packages("caret")
+library(mlbench)
+library(caret)
+dataset_cor <- dataset
+dataset_cor$id_men <- NULL
+dataset_cor$id_pers <- NULL
+dataset_cor$nbd <- NULL
+dataset_cor$NB_velo <- NULL
+dataset_cor$num_per_perm <- NULL
+#dataset_cor$UN <- NULL
+correlationMatrix <- cor(dataset_cor[ ,])
+print(correlationMatrix)
+```
+
+```{r, include=FALSE}
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+print(highlyCorrelated)
+```
+
+We end up just having VP_DISPO as the highest correlation level bur since it is one of our imposed variable we wont be eliminating that.
+
+```{r, include=FALSE}
+library(corrplot)
+corrplot(cor(dataset_cor))
+```
+
+The first thing we notice is car_ratio and VP_DISPO are the most correlated variables which is an expected result since we created car_ratio by VP_DISPO. As VP_DISPO is our Z variable we will not be removing it
+Also, we notice that there are negative correlations between nb_pers-age and permis-age.
+
+
+## Change all the numeric data to categorical data
+
+
+```{r, include=FALSE}
+dataset_NotNormal<-dataset      # a copy of dataset before normalization
+hist(dataset_NotNormal$NB_velo)
+```
+
+```{r, include=FALSE}
+library(data.table)
+library(Publish)
+dataset_NotNormal$NB_velo_cat <- cut(dataset_NotNormal$NB_velo, breaks = c(-1,2,4,6,8), labels = c("<2","2-4","4-6","6-8"))
+```
+
+```{r, include=FALSE}
+hist(dataset_NotNormal$nb_pers)
+```
+
+```{r, include=FALSE}
+dataset_NotNormal$nb_pers_cat <- cut(dataset_NotNormal$nb_pers, breaks = c(-1,2,4,8), labels = c("<2","2-4",">4"))
+```
+
+### car ratio
+
+```{r, include=FALSE}
+hist(dataset_NotNormal$car_ratio)
+```
+
+```{r, include=FALSE}
+dataset_NotNormal$car_ratio_cat<- cut(dataset_NotNormal$car_ratio, breaks = c(-1,0.5,1,2), labels = c("<0.5","0.5-1","1-1.5"))
+```
+
+```{r, fig.height=2.5, echo=FALSE}
+barplot(table(dataset_NotNormal$car_ratio_cat), main = "Car_ratio Frequency",
+     xlab = "car_ratio",)
+```
+
+### Bike_ratio
+
+```{r, include=FALSE}
+hist(dataset_NotNormal$bike_ratio)
+```
+
+```{r, include=FALSE}
+dataset_NotNormal$bike_ratio_cat<- cut(dataset_NotNormal$bike_ratio, breaks = c(-1,0,1,3), labels = c("0","0-1",">1"))
+```
+
+```{r, fig.height=2.5, echo=FALSE}
+barplot(table(dataset_NotNormal$bike_ratio_cat), main = "Bike_ratio Frequency",
+     xlab = "Bike_ratio",)
+```
+
+### sex
+
+```{r, include=FALSE}
+dataset_NotNormal$sexe_cat<- cut(dataset_NotNormal$sexe, breaks = c(-1,1.5,2.5), labels = c("M","F"))
+
+```
+
+```{r, fig.height=2.5, echo=FALSE}
+barplot(table(dataset_NotNormal$sexe_cat), main = "Number of Male and Female ",
+     xlab = "Sex",)
+```
+
+## Permis and ABO_TC 
+
+```{r, include=FALSE}
+dataset_NotNormal$permis_cat<- cut(dataset_NotNormal$permis, breaks = c(-1,1.5,2.5), labels = c("Yes","No"))
+dataset_NotNormal$ABO_TC_cat<- cut(dataset_NotNormal$ABO_TC, breaks = c(-1,1.5,2.5), labels = c("Yes","No"))
+```
+
+```{r, fig.height=2.5, echo=FALSE}
+barplot(table(dataset_NotNormal$permis_cat), main = "Having driving licence? ",
+     xlab = "Driving licence",)
+```
+
+```{r, fig.height=2.5, echo=FALSE}
+barplot(table(dataset_NotNormal$ABO_TC_cat), main = "Having public transportation subscribtion? ",
+     xlab = "Transportaion Subscription",)
+```
+
+# Main Approach
+
+Our main approach is based on possession of driving licence. Car ownership is related to able to get a car among the possessions in our point of view (based on LIT RES [@jong2004comparison]) . In our case, Someone who can't drive cannot occupy the car without a driver so we have determined to create car_ratio variable by using the people with driving licence. 
+
+## Strategy
+
+We will use Gower clustering algorithm as we have mixed input (both discrete and continuous) for clustering and we cannot use clustering methods such as K-means that works based on mathematical distance. This method is an algorithm designed specially for mixed data. This decision is based on the literature
+
+We will use decision tree, random forest and binary logistic regression because we have discrete binary output. We selected these methods to see their efficiency.
+
+
+# Specific Focus W - Clustering
+
+The specific focus of this study is Car Ownership. The objective is to create a value W which is made by features and variables that can affect the car ownership. In this project, these variables have been selected based on the literature review of scientific papers plus our variables of interest. The variable selection study table based on the literature review can be found in the "Annex" setion. These variables are utilized to cluster the data set to separate groups each of which represent different features and behaviors related to car ownership.
+
+## Clustering method
+
+Final features selected for the clustering are 6 variables consist of 3 numeric and 3 categorical variables. Hence, dealing with mix data should be considered. K-means method can not be applied on categorical variables as these variables are discrete and Ecuadorian distance is not applicable for them. Moreover, there is no information about the number of clusters. Based on our literature review [@8662561] in the case of mixed data type, Agglomerative Hierarchical methods alongside with Gower's similarity matrix are the most used methods. As a result, Hierarchical Ascending Clustering is the selected method of this study. First, it does not required the number of clusters. Second, by using Gower's distance the problem of working Simultaneously with the numerical  and categorical will be solved. 
+
+### Hierarchical Clustering
+
+```{r, include=FALSE}
+library(cluster)
+library(ClusterR)
+library(clusteringdatasets)
+#install.packages("remotes")
+#remotes::install_github("elbamos/clusteringdatasets")
+```
+
+#### Normalization
+
+
+3 features are numeric and it is better to make them normalized to make sure all the dimensions are treated equally. The min_max normaliation has been appllied to make sure each numeric column contributes the same impact on the distances.
+
+```{r, include=FALSE}
+min_max_norm <- function(x) {
+    (x - min(x)) / (max(x) - min(x))
+}
+dataset_temp1 <- dataset_NotNormal[, c(19,20,21)]
+dataset_temp2 <- dataset_NotNormal[, c(10,13,14)]
+dataset_temp2 <- as.data.frame(lapply(dataset_temp2, min_max_norm)) 
+dataset_Normal<- cbind(dataset_temp1,dataset_temp2)
+```
+
+The data is prepared for the clustering. There are different linkage methods for Hierarchical clustering. A set of methods have been tried and based on our observation, "Ward.D" method returns more balanced distribution of data in the clusters (equaly sized clusters). That is why the Ward.D is selected as linkage method. The graphs used for selection can be found in the "Annex" section.
+
+```{r, include=FALSE}
+gower.dist <- daisy(dataset_Normal, metric = c("gower"))
+list_hclust<- list()
+v_hclust<-c(
+  "ward.D", "average", "centroid", "complete", "median", "single"
+)
+
+for( j in v_hclust){
+  list_hclust[[j]]<-hclust(
+    gower.dist,
+    method = j)
+    plot(list_hclust[[j]], main=j)
+  
+}
+
+```
+
+
+```{r, echo=FALSE}
+#gower.dist <- daisy(dataset_Normal, metric = c("gower"))
+# Ward.D
+aggl.clust.c <- hclust(gower.dist, method = "ward.D")
+plot(aggl.clust.c,
+     main = "Agglomerative, ward.D linkages")
+rect.hclust(aggl.clust.c, k = 4, border = 2:6)
+abline(h = 4, col = 'red')
+```
+
+Based on the dendrogram and the gap between levels, cutting to create 4 clusters looks suitable.
+
+```{r, include=FALSE}
+cut_avg <- cutree(aggl.clust.c, k = 4)
+```
+
+Allocation of the variable W to the dataset.
+
+```{r, echo=FALSE}
+suppressPackageStartupMessages(library(dplyr))
+data_Hcl <- mutate(dataset_NotNormal, cluster = cut_avg)
+count(data_Hcl,cluster)
+```
+
+## Cluster Analyzis
+
+Initially, analysis of group is done base on each feature. For the feature "sex", the result shows that members of group 2 are all men and members of group 3 are all women. There is no big gender differences in group 1 and group 4.
+
+
+```{r, echo=FALSE}
+table(data_Hcl$sexe_cat, data_Hcl$cluster) 
+```
+
+
+Analysis of clusters based on "owning a driving licence" indicates that all members of group 2 and 3 have driving licence and all members of group 1 don't have a driving licence. Members of group 4 are divided roughly equally. 
+
+```{r, echo=FALSE}
+table(data_Hcl$permis_cat, data_Hcl$cluster) 
+```
+
+
+For the "owning a public transportation subscription", all the members of group 4 have a subscription and all the members of the group 2 and 3 
+
+```{r, echo=FALSE}
+table(data_Hcl$ABO_TC_cat, data_Hcl$cluster) 
+```
+
+After analyzing the categorical features based on the clusters it is time to analyse the numerical values.The full summary statistic of these numerical features based on clusters are represented in "Annex". Here, we only compare the mean value of variables among all 4 groups.
+Mean of number of available cars in the households are more in group 2 and 3 in comparision between group 1 and 4.
+
+
+```{r, echo=FALSE}
+tapply(data_Hcl$VP_DISPO, data_Hcl$cluster, mean) 
+```
+
+The ratio of car owners who have driving licence are almost similar in all the groups
+
+```{r, echo=FALSE}
+tapply(data_Hcl$car_ratio, data_Hcl$cluster, mean) 
+```
+
+
+Members of group one has less bike ratio than other groups
+
+```{r,echo=FALSE }
+tapply(data_Hcl$bike_ratio, data_Hcl$cluster, mean) 
+```
+
+Group 1 and 4 have a more mean of number of persons in their household compared to group 2 and 3
+
+```{r, echo=FALSE}
+tapply(data_Hcl$nb_pers, data_Hcl$cluster, mean)
+```
+
+
+# Prediction
+
+
+```{r, include=FALSE}
+data_pred <- data_Hcl[, c(3,8,22,11)]
+table(dataset$UN)
+```
+
+```{r, include=FALSE}
+data_pred$UN<- cut(data_Hcl$UN, breaks = c(-1,0.5,2.5), labels = c("Mobile","Immobile"))
+data_pred$cluster<- cut(data_Hcl$cluster, breaks = c(0.5,1.5,2.5,3.5,4.5,5.5), labels = c("1","2","3","4","5"))
+head(data_pred)
+```
+
+## Oversampling
+
+The oversampling was due the bias that the data set had, almost 90% of our data had a mobile output. Causing an overfitting in the prediction models. That's why we made the oversampling to balance the outputs
+
+```{r, include=FALSE}
+library(ROSE) 
+```
+
+```{r, echo=FALSE}
+over <- ovun.sample(UN~., data =data_pred , method = "over", N = 11720)$data
+PredictionDataset <- over
+head(over)
+table(over$UN)
+
+```
+
+
+```{r, include=FALSE}
+summary(over)
+```
+
+The machine learning methods chosen to develop this work were: 1. decision tree method, 2. logistic regression and 3. Random Forest. As categorical and non-categorical variables are being treated, these models are applicable and have as a result the interpretation of the relationship between classification prediction as in the case of method 1 and method 3. 
+
+
+## Decision Tree
+
+
+```{r, include=FALSE}
+library(rpart)
+library(rpart.plot)
+library(caret)
+```
+
+### Split the data in train set and test set (%70;%30)
+
+Cross-validation with the probability %70 (trainset) and %30 (testset) was used for make decision tree learn and predict.
+
+
+```{r, include=FALSE}
+ind = sample(2, nrow(over), replace=T, prob=c(0.75, 0.25))
+trainset = over[ind==1, ]
+testset  = over[ind==2, ]
+```
+
+### Learn on the train set
+
+```{r, echo=FALSE}
+model = rpart(UN ~. , data=data.frame(trainset) , method = "class", parms = list(split = "gini"), 
+              control = rpart.control(minsplit = 20, minbucket=10, maxdepth=4))
+
+prp(model,type=2,extra=1)
+
+```
+
+### Evaluate the learning performances on the train set
+
+```{r, include=FALSE}
+trainPred = predict(model, newdata = data.frame(trainset), type = "class")
+table(trainPred, trainset[,4])
+
+cm=as.matrix(table(trainPred, trainset[,4]))
+n = sum(cm)
+diag = diag(cm) 
+accuracy = sum(diag) / n 
+accuracy
+
+```
+
+```{r, echo=FALSE}
+confusionMatrix(trainPred, as.factor(trainset$UN))
+```
+
+### Evaluate the prediction performances on the test set
+
+```{r, include=FALSE}
+testPred = predict(model, newdata = data.frame(testset), type = "class")
+table(testPred, testset[,4])
+
+cm=as.matrix(table(testPred, testset[,4]))
+n = sum(cm)
+diag = diag(cm) 
+accuracy = sum(diag) / n 
+accuracy
+
+```
+
+```{r, echo=FALSE}
+confusionMatrix(testPred, as.factor(testset$UN))
+
+```
+
+We can check accuracy by summing up the diagonal matrix and dividing it by total number which is 8274. We have an accuracy X for learn and accuracy Y for predict. Prediction accuracy is lower than learn and it is so normal. Finally, we have a p-value < 0.05 in order to verify result for both.
+
+## Logistics Regression
+
+```{r}
+logistic <- glm(UN ~ ., data=PredictionDataset, family="binomial")
+summary(logistic)
+ 
+## Now calculate the overall "Pseudo R-squared" and its p-value
+ll.null <- logistic$null.deviance/-2
+ll.proposed <- logistic$deviance/-2
+ 
+## McFadden's Pseudo R^2 = [ LL(Null) - LL(Proposed) ] / LL(Null)
+(ll.null - ll.proposed) / ll.null
+ 
+## The p-value for the R^2
+1 - pchisq(2*(ll.proposed - ll.null), df=(length(logistic$coefficients)-1))
+ 
+```
+
+Although the model has brought interesting coefficients and brings as relevant the variable "Cluster 4", the logistic regression method was the method with less accuracy and less statistical significance, since the value of its estimated r square was 0.120. Also in this method it was possible to verify that within the model, all variables were important, reinforcing the selection of these variables and the subsequent clustering. 
+
+
+## Random Forest
+
+```{r, include=FALSE}
+library(randomForest)
+library(caret)
+library(e1071)
+library(ggplot2)
+library(cowplot)
+```
+
+The random forest method was used in the state of the art, for its execution it was verified that it was necessary to use more trees than the 500 standard trees for the method, and as can be seen below this was not necessary. 
+
+```{r, include=FALSE}
+set.seed(47)
+RFmodel <- randomForest(UN ~ ., data=PredictionDataset, proximity=TRUE)
+```
+### Checking the number of trees 
+
+```{r, fig.height=4, echo=FALSE}
+oob.error.data <- data.frame(
+  Trees=rep(1:nrow(RFmodel$err.rate), times=3),
+  Type=rep(c("OOB", "Immobile", "Mobile"), each=nrow(RFmodel$err.rate)),
+  Error=c(RFmodel$err.rate[,"OOB"], 
+    RFmodel$err.rate[,"Immobile"], 
+    RFmodel$err.rate[,"Mobile"]))
+
+ggplot(data=oob.error.data, aes(x=Trees, y=Error)) +
+  geom_line(aes(color=Type))
+```
+
+In addition, the number of related variables within a tree has been optimized. The code below was used to minimize the error according to the number of variables used. The best number of variables for the model is 3, which has the smallest error from all other tests. 
+
+### Checking if the number of variables in each tree is good 
+
+```{r, echo=FALSE}
+number.values <- vector(length=3)
+for(i in 1:3) {
+  temp.model <- randomForest(UN ~ ., data=PredictionDataset, mtry=i, ntree=1000)
+  number.values[i] <- temp.model$err.rate[nrow(temp.model$err.rate),1]
+}
+number.values
+## find the minimum error
+min(number.values)
+## find the optimal value for mtry...
+which(number.values == min(number.values))
+## create a model for proximities using the best value for mtry
+finalrfmodel <- randomForest(UN ~ ., 
+                      data=PredictionDataset,
+                      ntree=500, 
+                      proximity=TRUE, 
+                      mtry=which(number.values == min(number.values)))
+```
+
+After the best random forest model was achieved the importance of the variables were ploted to see the correlation of them with the variable of interest and how it affects the model made.  
+
+### Plotting Random Forest Results 
+
+```{r, fig.height=3.5, echo=FALSE}
+importance(finalrfmodel)
+varImpPlot(finalrfmodel)
+```
+
+The best model prediction method was Random Forest with an accuracy of 79.9%, which is relevant for these models. The results of the initial models with an accuracy of 91%, thanks to the overfitting of the system and the bias that the data set had, did not reflect the reality of the model and the predictions, so the dataset was balanced for a better understanding of the system and to make it more statistically relevant. 
+
+# Cocnlusion
+The definition of a mobile person, according to our article, is a binary classification and is considered a mobile person who makes 1 or more trips by means of transport during the week and a non-mobile person are those who have the number of trips equal to 0, (survey conducted in 2010 in the urban area of Grenoble). 
+
+As shown above, the distribution of age with the number of mobile and non-mobile people had a positive correlation, and most of the dataset where people were classified as non-mobile was less than 5 years old. However, it is common sense that in early life and late life people stay at home more and therefore have more of these occurrences. 
+
+As the Random Forest system can show, age is the most relevant variable for the classification of the variable of interest of the project, which was to be expected since the mobility classification, explained previously, proved to be fragile, since people older than 5 and younger than 60 are usually engaged in activities such as study, work, routine activities, leisure activities, etc.  
+
+Finally, the models proved to be consistent with the statistical data seen earlier in this project and with the aforementioned reality. However, the fragility of the variable of interest, also mentioned above, does not allow us to study in more detail the socio-economic characteristics of the inhabitants of the metropolitan area of the city of Grenoble, Auvergne-Rhône-Alpes, France.
+
+# Annex
+
+Within the next steps we will be detecting and treating the outliers in our dataset.
+
+```{r,echo = FALSE}
+#install.packages("psych")
+library(psych)
+describe(dataset)
+```
+
+By looking at the describtion table of our daatset notice that the only unexpected values such (as wide range and signes) NB_2Rm has large maximum which is unexpected. 
+
+### NB_2Rm 
+
+```{r, fig.height=2.5, echo = FALSE}
+boxplot(dataset$NB_2Rm, horizontal = T)
+```
+
+
+```{r, include= FALSE}
+CleanDataset <- filter(dataset, NB_2Rm<5)
+hist(CleanDataset$NB_2Rm, breaks = 5) 
+```
+
+After having filtered the outliers we saw that we have more than 5000 0 values. Therefore, we can see that there is no significiant difference among the population so we can remove it.
+
+```{r, include = FALSE }
+dataset$NB_2Rm <- NULL
+```
+
+### NB_Velo
+
+We detetcted the outliers of number of bikes per household  by boxplotting. We saw that 10 bikes in a household  is an outlier so we filtered our dataset by NB_Velo below 10 people
+
+```{r, fig.height=2.5, echo = FALSE}
+boxplot(dataset$NB_velo, horizontal = T)
+```
+
+```{r, include=FALSE}
+boxplot.stats(dataset$NB_velo)$out
+dataset <- filter(dataset, NB_velo<10)
+```
+
+```{r, include=FALSE}
+boxplot(dataset$NB_velo, horizontal = T)
+```
+
+```{r, include=FALSE}
+boxplot.stats(dataset$NB_velo)$out
+summary(dataset$NB_velo)
+```
+
+### nb_pers 
+
+We detetcted the outliers of household size by boxplotting. We saw that 8 people is an outlier so we filtered our dataset by nbr_pers below 7 people
+
+```{r, fig.height=2.5, echo = FALSE}
+boxplot(dataset$nb_pers, horizontal = T)
+```
+```{r, include=FALSE}
+boxplot.stats(dataset$nb_pers)$out
+summary(dataset$nb_pers)
+```
+
+```{r, include=FALSE}
+dataset <- filter(dataset, nb_pers<8)
+boxplot(dataset$nb_pers, horizontal = T)
+```
+
+### nbd
+
+We detected the outliers of household size by boxplotting. We saw that 10 numbers of trips is an outlier so we filtered our dataset by nbd below 10 number of trips
+
+```{r, fig.height=2.5, echo = FALSE}
+boxplot(dataset$nbd,horizontal = T)
+```
+```{r, include = FALSE}
+boxplot.stats(dataset$nbd)$out
+```
+
+```{r, include = FALSE}
+dataset <- filter(dataset, nbd<10)
+boxplot.stats(dataset$nbd)$out
+```
+
+Same strategy is applied for the "Number of available cars in households" ,  "Number of driving licence holders per household", "Car ratio" and "Bike ratio"
+
+### VP_DISPO
+
+```{r, fig.height=2.5, echo = FALSE}
+boxplot(dataset$VP_DISPO, horizontal = T)
+```
+
+```{r, include = FALSE}
+boxplot.stats(dataset$VP_DISPO)$out
+```
+
+The outliers for the variable VP_DISPO is starting from 4, so we will filter...
+
+```{r, include = FALSE}
+dataset <- filter(dataset, VP_DISPO<4)
+boxplot.stats(dataset$VP_DISPO)$out
+```
+
+### Number of driving licence holders per household
+
+```{r, fig.height=2.5, echo = FALSE}
+boxplot(dataset$num_per_perm, horizontal = T)
+```
+```{r, include = FALSE}
+boxplot.stats(dataset$num_per_perm)$out
+```
+
+```{r, include = FALSE}
+dataset <- filter(dataset, num_per_perm<4)
+boxplot.stats(dataset$num_per_perm)$out
+```
+
+### Car Ratio
+
+```{r, fig.height=2.5, echo = FALSE}
+boxplot(dataset$car_ratio, horizontal = T)
+```
+```{r, include = FALSE}
+boxplot.stats(dataset$car_ratio)$out
+```
+
+```{r, include = FALSE}
+dataset <- filter(dataset, car_ratio<2)
+boxplot.stats(dataset$car_ratio)$out
+```
+
+### Bike Ratio
+
+```{r, fig.height=2.5, echo=FALSE}
+boxplot(dataset$bike_ratio, horizontal = T)
+```
+```{r, include=FALSE}
+boxplot.stats(dataset$bike_ratio)$out
+```
+
+```{r, include=FALSE}
+dataset <- filter(dataset, bike_ratio<2.66)
+boxplot.stats(dataset$bike_ratio)$out
+```
+
+All the outliers in ourdataset have been cleaned.
+
+
+Selecting linkage method for hierarchical clustering.
+
+```{r, include=FALSE}
+gower.dist <- daisy(dataset_Normal, metric = c("gower"))
+list_hclust<- list()
+v_hclust<-c(
+  "ward.D", "average", "centroid", "complete", "median", "single"
+)
+
+for( j in v_hclust){
+  list_hclust[[j]]<-hclust(
+    gower.dist,
+    method = j)
+    plot(list_hclust[[j]], main=j)
+  
+}
+
+```
+```{r, echo=FALSE}
+tapply(data_Hcl$sexe_cat, data_Hcl$cluster, table) 
+```
+Analysis of clusters based on "owning a driving licence" indicates that all members of group 2 and 3 have driving licence and all members of group 1 don't have a driving licence. Members of group 4 are divided roughly equally. 
+
+```{r, echo=FALSE}
+tapply(data_Hcl$cluster, data_Hcl$permis_cat, table) 
+```
+For the "owning a public transportation subscription", all the members of group 4 have a subscription and all the members of the group 2 and 3 
+
+```{r, echo=FALSE}
+tapply(data_Hcl$cluster, data_Hcl$ABO_TC_cat, table)
+```
+Group 1 has a lower range of ages. Also group 4 has a low mean of ages compare to the group 2 and 3.
+
+```{r, echo=FALSE}
+tapply(data_Hcl$age, data_Hcl$cluster, summary) 
+```
+Mean of number of avaliable cars in the households are more in group 2 and 3 in comparision between group 1 and 4.
+
+```{r, echo=FALSE}
+tapply(data_Hcl$VP_DISPO, data_Hcl$cluster, summary) 
+```
+The ratio of car owners who have driving licence are almost similar in all the groups
+
+```{r, echo=FALSE}
+tapply(data_Hcl$car_ratio, data_Hcl$cluster, summary) 
+```
+Group 1 and 4 have more bikes than group 2 and 4
+
+```{r, echo=FALSE}
+tapply(data_Hcl$NB_velo, data_Hcl$cluster, summary) 
+```
+Group 1 and 4 have a more mean of number of persons in their household compare to group 2 and 3
+
+```{r, echo=FALSE}
+tapply(data_Hcl$nb_pers, data_Hcl$cluster, summary) 
+```
+
+
+```{r, include=FALSE}
+suppressPackageStartupMessages(library(ggplot2))
+ggplot(data_Hcl, aes(x=age, y = UN, color = factor(cluster))) + geom_point()
+```
+
+
+
+
+
+
